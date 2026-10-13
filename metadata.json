@@ -1,0 +1,6 @@
+{
+  "name": "Smart Classroom Attendance Management System",
+  "description": "Smart Classroom Attendance Management System Using Face Recognition - automated entry/exit tracking, live entrance monitoring, and analytics dashboard.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
