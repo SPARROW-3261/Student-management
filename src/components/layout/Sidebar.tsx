@@ -14,7 +14,9 @@ import {
   ShieldCheck,
   ChevronRight,
   X,
+  Lock,
 } from 'lucide-react';
+import { AuthUser } from '../../types/attendance';
 
 export type NavItem =
   | 'dashboard'
@@ -35,6 +37,7 @@ interface SidebarProps {
   mobileOpen: boolean;
   onCloseMobile: () => void;
   onOpenPresentationModal: () => void;
+  currentUser?: AuthUser | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -43,19 +46,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen,
   onCloseMobile,
   onOpenPresentationModal,
+  currentUser = null,
 }) => {
-  const menuItems: { id: NavItem; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'live', label: 'Live Attendance', icon: Video, badge: 'LIVE' },
-    { id: 'students', label: 'Students', icon: GraduationCap, badge: '250' },
-    { id: 'teachers', label: 'Teachers', icon: Users, badge: '18' },
-    { id: 'classrooms', label: 'Classroom Management', icon: DoorOpen },
-    { id: 'records', label: 'Attendance Records', icon: ClipboardList },
-    { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
-    { id: 'face_settings', label: 'Face Recognition Settings', icon: ScanFace },
-    { id: 'users', label: 'User Management', icon: UserCheck },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
+  const isStudent = currentUser?.role === 'student';
+  const isTeacher = currentUser?.role === 'teacher';
+  const isAdmin = currentUser?.role === 'admin';
+
+  const menuItems: {
+    id: NavItem;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: string;
+    adminOnly?: boolean;
+  }[] = isStudent
+    ? [
+        { id: 'dashboard', label: 'My Attendance Portal', icon: GraduationCap },
+        { id: 'live', label: 'Classroom Live Feed', icon: Video, badge: 'VIEW' },
+        { id: 'records', label: 'My Attendance Logs', icon: ClipboardList },
+        { id: 'reports', label: 'Course Analytics', icon: BarChart3 },
+        { id: 'students', label: 'Classmates Directory', icon: Users, badge: 'Read Only' },
+        { id: 'classrooms', label: 'Campus Classrooms', icon: DoorOpen },
+        { id: 'face_settings', label: 'Face Engine Config', icon: ScanFace, badge: 'Admin Only', adminOnly: true },
+        { id: 'settings', label: 'System Settings', icon: Settings, badge: 'Admin Only', adminOnly: true },
+      ]
+    : [
+        { id: 'dashboard', label: isTeacher ? 'Faculty Dashboard' : 'Dashboard', icon: LayoutDashboard },
+        { id: 'live', label: 'Live Attendance', icon: Video, badge: 'LIVE' },
+        { id: 'students', label: 'Students', icon: GraduationCap, badge: '250' },
+        { id: 'teachers', label: 'Teachers', icon: Users, badge: '18' },
+        { id: 'classrooms', label: 'Classroom Management', icon: DoorOpen },
+        { id: 'records', label: 'Attendance Records', icon: ClipboardList },
+        { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
+        { id: 'face_settings', label: 'Face Recognition Settings', icon: ScanFace, badge: !isAdmin ? 'Admin Only' : undefined, adminOnly: !isAdmin },
+        { id: 'users', label: 'User Management', icon: UserCheck, badge: !isAdmin ? 'Admin Only' : undefined, adminOnly: !isAdmin },
+        { id: 'settings', label: 'Settings', icon: Settings, badge: !isAdmin ? 'Admin Only' : undefined, adminOnly: !isAdmin },
+      ];
 
   const handleNavClick = (id: NavItem) => {
     onSelectNav(id);

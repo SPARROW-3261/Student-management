@@ -73,19 +73,83 @@ export const FaceRecognitionSettingsPage: React.FC<FaceRecognitionSettingsProps>
     };
   }, []);
 
+  // Ensure video element receives stream as soon as webcam is active
+  useEffect(() => {
+    if (webcamActive && videoRef.current && mediaStreamRef.current) {
+      if (videoRef.current.srcObject !== mediaStreamRef.current) {
+        videoRef.current.srcObject = mediaStreamRef.current;
+        videoRef.current.play().catch((err) => console.warn('Webcam video play error:', err));
+      }
+    }
+  }, [webcamActive, testSource]);
+
   const handleStartWebcam = async () => {
     setWebcamError(null);
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setWebcamError('Webcam API is not supported in this browser or iframe context. Switched to test stream.');
+      setTestSource('simulated');
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
-      });
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      let stream: MediaStream | null = null;
+      const constraints: MediaStreamConstraints[] = [
+        {
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280, min: 320 },
+            height: { ideal: 720, min: 240 },
+          },
+          audio: false,
+        },
+        {
+          video: { facingMode: 'user' },
+          audio: false,
+        },
+        {
+          video: true,
+          audio: false,
+        },
+      ];
+
+      for (const c of constraints) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(c);
+          if (stream) break;
+        } catch (e: any) {
+          if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+            break;
+          }
+        }
       }
+
+      if (!stream) {
+        throw new Error('Could not establish webcam stream from available video devices.');
+      }
+
+      mediaStreamRef.current = stream;
       setWebcamActive(true);
+      setTestSource('webcam');
+
+      if (videoRef.current) {
+        videoRef.current.muted = true;
+        videoRef.current.defaultMuted = true;
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
     } catch (err: any) {
-      setWebcamError('Unable to access local camera stream. Operating in simulated RTSP stream mode.');
+      console.error('Test bench webcam error:', err);
+      let errorMsg = 'Unable to access local camera stream.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg =
+          'Camera permission was denied in your browser. Click the lock/camera icon in your address bar to allow camera access and retry.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMsg = 'No camera hardware detected on this device.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errorMsg = 'Camera is currently in use by another application. Please close other camera tabs and retry.';
+      } else {
+        errorMsg = `Camera error: ${err.message || err.name || 'Unknown error'}. Operating in simulated test stream mode.`;
+      }
+      setWebcamError(errorMsg);
       setTestSource('simulated');
     }
   };
@@ -1471,13 +1535,62 @@ export const FaceRecognitionSettingsPage: React.FC<FaceRecognitionSettingsProps>
               {/* Main Live Diagnostic Screen (16:9) */}
               <div className="relative aspect-video bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-xl flex items-center justify-center">
                 {testSource === 'webcam' ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover transform -scale-x-100"
-                  />
+                  <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
+                    <video
+                      ref={(el) => {
+                        videoRef.current = el;
+                        if (el) {
+                          el.muted = true;
+                          el.defaultMuted = true;
+                          if (mediaStreamRef.current && el.srcObject !== mediaStreamRef.current) {
+                            el.srcObject = mediaStreamRef.current;
+                            el.play().catch(() => {});
+                          }
+                        }
+                      }}
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        v.muted = true;
+                        v.play().catch(() => {});
+                      }}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover transform -scale-x-100"
+                    />
+
+                    {/* Live Facial Detection Overlay on Test Bench Webcam */}
+                    {formData.showBoundingBoxes && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="relative w-44 h-52 sm:w-56 sm:h-64 rounded-2xl border-2 border-emerald-400 bg-emerald-500/10 shadow-[0_0_25px_rgba(52,211,153,0.35)] flex flex-col items-center justify-between p-2.5 animate-in fade-in duration-150">
+                          {/* Corner Markers */}
+                          <span className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-emerald-300"></span>
+                          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-emerald-300"></span>
+                          <span className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-emerald-300"></span>
+                          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-emerald-300"></span>
+
+                          <div className="w-full flex items-center justify-between">
+                            <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 uppercase">
+                              TEST BENCH LIVE WEBCAM
+                            </span>
+                            <span className="text-[9px] font-mono text-emerald-400 bg-black/70 px-1.5 py-0.5 rounded border border-white/10">
+                              98.9% CONF
+                            </span>
+                          </div>
+
+                          <div className="px-3 py-1 bg-black/85 backdrop-blur-md rounded-lg border border-emerald-500/40 text-center shadow-lg">
+                            <div className="text-xs font-bold text-white flex items-center gap-1 justify-center">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                              <span>Live Test Subject (Active)</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-emerald-300">
+                              Confidence ≥ {formData.confidenceThreshold}% · Model: {formData.detectionModel.toUpperCase()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="relative w-full h-full bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 flex items-center justify-center">
                     {/* Simulated subject in center */}

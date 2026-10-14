@@ -8,6 +8,7 @@ import {
   AdminUser,
   SecurityIncident,
   AttendanceAlertTrigger,
+  AuthUser,
 } from '../types/attendance';
 
 export const ADMIN_USER: AdminUser = {
@@ -19,6 +20,54 @@ export const ADMIN_USER: AdminUser = {
   avatarUrl: '/src/assets/images/avatar_admin_sunita_1791905720378.jpg',
   lastLogin: 'Today, 08:15 AM',
 };
+
+export const DEMO_ADMIN_USER: AuthUser = {
+  id: 'USR-ADM-01',
+  name: 'Dr. Sunita Rao',
+  email: 'admin@college.edu',
+  role: 'admin',
+  avatarUrl: '/src/assets/images/avatar_admin_sunita_1791905720378.jpg',
+  department: 'Department of Computer Applications',
+  canMakeChanges: true, // Admin has permission to make changes
+  phone: '+91 94480 12345',
+  lastLogin: 'Today, 08:15 AM',
+};
+
+export const DEMO_TEACHER_USER: AuthUser = {
+  id: 'USR-TCH-01',
+  name: 'Prof. Amit Verma',
+  email: 'amit.verma@college.edu',
+  role: 'teacher',
+  avatarUrl: '/src/assets/images/avatar_teacher_amit_1791905720315.jpg',
+  department: 'Computer Applications',
+  designation: 'Associate Professor & Lab Incharge',
+  cabinNo: 'Cabin 304, 3rd Floor',
+  canMakeChanges: false, // Teacher cannot make administrative changes
+  teacherId: 'TCH-108',
+  phone: '+91 98230 45678',
+  lastLogin: 'Today, 08:45 AM',
+};
+
+export const DEMO_STUDENT_USER: AuthUser = {
+  id: 'USR-STU-01',
+  name: 'Rahul Kumar',
+  email: 'rahul.kumar@student.edu',
+  role: 'student',
+  avatarUrl: '/src/assets/images/avatar_student_rahul_1791905718978.jpg',
+  course: 'MCA (Computer Applications)',
+  section: 'MCA-II A',
+  rollNo: '24MCA042',
+  canMakeChanges: false, // Student cannot make changes
+  studentId: 'STU-2024-042',
+  phone: '+91 98451 22345',
+  lastLogin: 'Today, 09:00 AM',
+};
+
+export const INITIAL_AUTH_USERS: AuthUser[] = [
+  DEMO_ADMIN_USER,
+  DEMO_TEACHER_USER,
+  DEMO_STUDENT_USER,
+];
 
 export const INITIAL_CONFIG: FaceRecognitionConfig = {
   activeCameraId: 'cam-301-ent',

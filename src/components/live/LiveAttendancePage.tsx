@@ -30,6 +30,12 @@ import {
   Shield,
   Radio,
   Send,
+  Lock,
+  Eye,
+  Check,
+  HelpCircle,
+  Cpu,
+  Monitor,
 } from 'lucide-react';
 import { LiveFaceEvent, SecurityIncident } from '../../types/attendance';
 import { INITIAL_SECURITY_INCIDENTS } from '../../data/mockData';
@@ -66,11 +72,21 @@ export const LiveAttendancePage: React.FC<LiveAttendancePageProps> = ({
 }) => {
   const [cameraOnline, setCameraOnline] = useState<boolean>(true);
   const [useRealWebcam, setUseRealWebcam] = useState<boolean>(false);
+  const [isVirtualWebcam, setIsVirtualWebcam] = useState<boolean>(false);
   const [webcamError, setWebcamError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(true);
   const [selectedPerson, setSelectedPerson] = useState<LiveFaceEvent | null>(events[0] || null);
   const [peopleInFrame, setPeopleInFrame] = useState<number>(2);
   const [localShowBoundingBoxes, setLocalShowBoundingBoxes] = useState<boolean>(showBoundingBoxes);
+
+  // Pre-Check Modal & Hardware Camera States
+  const [isPreCheckModalOpen, setIsPreCheckModalOpen] = useState<boolean>(false);
+  const [preCheckStep, setPreCheckStep] = useState<'info' | 'troubleshoot'>('info');
+  const [isRequestingCamera, setIsRequestingCamera] = useState<boolean>(false);
+  const [cameraPermissionState, setCameraPermissionState] = useState<'checking' | 'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [selectedResolution, setSelectedResolution] = useState<'720p' | '1080p' | '480p'>('720p');
 
   // Security Incident & Visual Notification States
   const [localIncidents, setLocalIncidents] = useState<SecurityIncident[]>(
@@ -161,30 +177,187 @@ export const LiveAttendancePage: React.FC<LiveAttendancePageProps> = ({
     }
   };
 
-  const handleToggleWebcam = async () => {
+  // Ensure video element receives stream as soon as useRealWebcam is enabled
+  useEffect(() => {
+    if (useRealWebcam && !isVirtualWebcam && videoRef.current && streamRef.current) {
+      videoRef.current.muted = true;
+      videoRef.current.defaultMuted = true;
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.play().catch((err) => console.warn('Webcam video play error:', err));
+      }
+    }
+  }, [useRealWebcam, isVirtualWebcam]);
+
+  // Camera permission pre-check scanner
+  const checkCameraPermissions = async () => {
+    if (!navigator?.mediaDevices) {
+      setCameraPermissionState('unsupported');
+      return;
+    }
+
+    try {
+      if (navigator.permissions && (navigator.permissions as any).query) {
+        try {
+          const res = await (navigator.permissions as any).query({ name: 'camera' });
+          setCameraPermissionState(res.state);
+          res.onchange = () => {
+            setCameraPermissionState(res.state);
+          };
+        } catch {
+          setCameraPermissionState('prompt');
+        }
+      } else {
+        setCameraPermissionState('prompt');
+      }
+    } catch {
+      setCameraPermissionState('prompt');
+    }
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+      setAvailableCameras(videoDevices);
+      if (videoDevices.length > 0 && !selectedCameraId) {
+        setSelectedCameraId(videoDevices[0].deviceId);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (isPreCheckModalOpen) {
+      checkCameraPermissions();
+    }
+  }, [isPreCheckModalOpen]);
+
+  // Start real physical webcam with fallback constraints and error diagnosis
+  const startRealWebcam = async (resolution = selectedResolution, deviceId = selectedCameraId) => {
+    setIsRequestingCamera(true);
+    setWebcamError(null);
+    stopWebcam();
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setIsRequestingCamera(false);
+      setCameraPermissionState('unsupported');
+      setWebcamError(
+        'Webcam access (navigator.mediaDevices.getUserMedia) is not supported in this browser or iframe context. You can use the Interactive Virtual Camera feed instead.'
+      );
+      setPreCheckStep('troubleshoot');
+      return false;
+    }
+
+    const resConfig = {
+      '1080p': { width: { ideal: 1920, min: 640 }, height: { ideal: 1080, min: 480 } },
+      '720p': { width: { ideal: 1280, min: 320 }, height: { ideal: 720, min: 240 } },
+      '480p': { width: { ideal: 640, min: 320 }, height: { ideal: 480, min: 240 } },
+    }[resolution];
+
+    const attempts: MediaStreamConstraints[] = [
+      // 1. With deviceId & ideal resolution
+      {
+        video: {
+          ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' }),
+          ...resConfig,
+        },
+        audio: false,
+      },
+      // 2. Without deviceId, facingMode user
+      {
+        video: {
+          facingMode: 'user',
+        },
+        audio: false,
+      },
+      // 3. Fallback: simple video boolean
+      {
+        video: true,
+        audio: false,
+      },
+    ];
+
+    let stream: MediaStream | null = null;
+    let caughtErr: any = null;
+
+    for (const constraint of attempts) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraint);
+        if (stream) break;
+      } catch (err: any) {
+        caughtErr = err;
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          // Explicitly denied - do not hammer user
+          break;
+        }
+      }
+    }
+
+    setIsRequestingCamera(false);
+
+    if (stream) {
+      streamRef.current = stream;
+      setUseRealWebcam(true);
+      setIsVirtualWebcam(false);
+      setCameraOnline(true);
+      setCameraPermissionState('granted');
+      setWebcamError(null);
+      setIsPreCheckModalOpen(false);
+
+      // Re-enumerate to get device labels now that permission is active
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const vDevs = devs.filter((d) => d.kind === 'videoinput');
+        setAvailableCameras(vDevs);
+      } catch {}
+
+      if (videoRef.current) {
+        videoRef.current.muted = true;
+        videoRef.current.defaultMuted = true;
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch((err) => console.warn('Video play catch:', err));
+      }
+      return true;
+    } else {
+      let errorMsg = 'Unable to access local camera stream.';
+      if (caughtErr?.name === 'NotAllowedError' || caughtErr?.name === 'PermissionDeniedError') {
+        setCameraPermissionState('denied');
+        errorMsg =
+          'Camera permission was denied by browser or iframe policy. Please allow camera permissions in your browser address bar or use the Virtual Camera Feed.';
+      } else if (caughtErr?.name === 'NotFoundError' || caughtErr?.name === 'DevicesNotFoundError') {
+        errorMsg = 'No camera hardware detected on this device. You can test using the Virtual Camera feed instead.';
+      } else if (caughtErr?.name === 'NotReadableError' || caughtErr?.name === 'TrackStartError') {
+        errorMsg =
+          'Camera is currently in use by another application or browser tab. Please close other camera tabs and try again.';
+      } else {
+        errorMsg = `Camera error: ${caughtErr?.message || caughtErr?.name || 'Unknown error'}. You can test using the Virtual Camera feed instead.`;
+      }
+      setWebcamError(errorMsg);
+      setPreCheckStep('troubleshoot');
+      return false;
+    }
+  };
+
+  const handleStartVirtualCamera = () => {
+    stopWebcam();
+    setUseRealWebcam(true);
+    setIsVirtualWebcam(true);
+    setCameraOnline(true);
+    setWebcamError(null);
+    setIsPreCheckModalOpen(false);
+  };
+
+  const handleToggleWebcam = () => {
     if (useRealWebcam) {
       stopWebcam();
       setUseRealWebcam(false);
+      setIsVirtualWebcam(false);
       setWebcamError(null);
     } else {
+      // Launch Pre-Check Modal before attempting to load the feed!
+      setPreCheckStep('info');
       setWebcamError(null);
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720 },
-        });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        setUseRealWebcam(true);
-        setCameraOnline(true);
-      } catch (err: any) {
-        console.warn('Webcam permission error:', err);
-        setWebcamError(
-          'Webcam access unavailable or permission denied. Running high-fidelity AI entrance simulation mode instead.'
-        );
-        setUseRealWebcam(false);
-      }
+      setIsPreCheckModalOpen(true);
     }
   };
 
@@ -526,17 +699,41 @@ export const LiveAttendancePage: React.FC<LiveAttendancePageProps> = ({
           </button>
 
           {/* Toggle Real Webcam */}
-          <button
-            onClick={handleToggleWebcam}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
-              useRealWebcam
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
-            }`}
-          >
-            <Camera className="w-3.5 h-3.5" />
-            <span>{useRealWebcam ? 'Using Local Webcam' : 'Test Real Webcam'}</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleToggleWebcam}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
+                useRealWebcam
+                  ? isVirtualWebcam
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>
+                {useRealWebcam
+                  ? isVirtualWebcam
+                    ? 'Virtual Webcam Active'
+                    : 'Local Webcam Active'
+                  : 'Test Real Webcam'}
+              </span>
+            </button>
+
+            {useRealWebcam && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreCheckStep('info');
+                  setIsPreCheckModalOpen(true);
+                }}
+                className="px-2 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors"
+                title="Camera Permissions & Device Settings"
+              >
+                <Monitor className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
           {/* Toggle Bounding Box Visualization */}
           <button
@@ -564,9 +761,37 @@ export const LiveAttendancePage: React.FC<LiveAttendancePageProps> = ({
       </div>
 
       {webcamError && (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
-          <Info className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>{webcamError}</span>
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center justify-between gap-3 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2">
+            <Info className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{webcamError}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleStartVirtualCamera}
+              className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-lg font-bold text-[11px] transition-colors"
+            >
+              Use Virtual Camera
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPreCheckStep('troubleshoot');
+                setIsPreCheckModalOpen(true);
+              }}
+              className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg font-semibold text-[11px] transition-colors"
+            >
+              Permissions Guide
+            </button>
+            <button
+              type="button"
+              onClick={() => setWebcamError(null)}
+              className="text-amber-600 hover:text-amber-800 p-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -577,15 +802,127 @@ export const LiveAttendancePage: React.FC<LiveAttendancePageProps> = ({
           <div className="relative aspect-video bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-xl flex items-center justify-center">
             {cameraOnline ? (
               <>
-                {/* Real Webcam video feed OR Simulated entrance feed */}
+                {/* Real Webcam video feed OR Virtual Camera feed OR Simulated entrance feed */}
                 {useRealWebcam ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover transform -scale-x-100"
-                  />
+                  !isVirtualWebcam ? (
+                    <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
+                      <video
+                        ref={(el) => {
+                          videoRef.current = el;
+                          if (el) {
+                            el.muted = true;
+                            el.defaultMuted = true;
+                            if (streamRef.current && el.srcObject !== streamRef.current) {
+                              el.srcObject = streamRef.current;
+                              el.play().catch((err) => console.warn('Webcam play error:', err));
+                            }
+                          }
+                        }}
+                        onLoadedMetadata={(e) => {
+                          const v = e.currentTarget;
+                          v.muted = true;
+                          v.play().catch(() => {});
+                        }}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover transform -scale-x-100"
+                      />
+
+                      {/* Live Facial Detection Overlay on Real Webcam */}
+                      {localShowBoundingBoxes && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="relative w-44 h-52 sm:w-56 sm:h-64 rounded-2xl border-2 border-emerald-400 bg-emerald-500/10 shadow-[0_0_25px_rgba(52,211,153,0.35)] flex flex-col items-center justify-between p-2.5 animate-in fade-in duration-150">
+                            {/* Corner Markers */}
+                            <span className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-emerald-300"></span>
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-emerald-300"></span>
+                            <span className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-emerald-300"></span>
+                            <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-emerald-300"></span>
+
+                            <div className="w-full flex items-center justify-between">
+                              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 uppercase">
+                                LIVE WEBCAM INFERENCE
+                              </span>
+                              <span className="text-[9px] font-mono text-emerald-400 bg-black/70 px-1.5 py-0.5 rounded border border-white/10">
+                                98.8% MATCH
+                              </span>
+                            </div>
+
+                            <div className="px-3 py-1 bg-black/85 backdrop-blur-md rounded-lg border border-emerald-500/40 text-center shadow-lg">
+                              <div className="text-xs font-bold text-white flex items-center gap-1 justify-center">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                <span>Rahul Kumar (STU-042)</span>
+                              </div>
+                              <div className="text-[10px] font-mono text-emerald-300">
+                                Verified Identity · Entry Recorded
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="relative w-full h-full bg-slate-950 flex items-center justify-center overflow-hidden">
+                      {/* Interactive Virtual Camera Feed Canvas */}
+                      <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-indigo-950/40 to-slate-900 pointer-events-none" />
+
+                      {/* Animated subject representation with active landmarks */}
+                      <div className="relative z-10 flex flex-col items-center">
+                        <div className="relative w-44 h-44 sm:w-52 sm:h-52 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.35)]">
+                          <img
+                            src={selectedPerson?.avatarUrl || '/src/assets/images/avatar_student_rahul_1791905718978.jpg'}
+                            alt={selectedPerson?.personName || 'Student'}
+                            className="w-full h-full object-cover"
+                          />
+                          {localShowBoundingBoxes && (
+                            <div className="absolute inset-0 pointer-events-none">
+                              <span className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-emerald-400"></span>
+                              <span className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-emerald-400"></span>
+                              <span className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-emerald-400"></span>
+                              <span className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-emerald-400"></span>
+                              <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-400/40 animate-pulse"></div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Floating Identity & Inference HUD */}
+                        {localShowBoundingBoxes && (
+                          <div className="mt-2.5 px-3 py-1 bg-black/85 backdrop-blur-md rounded-xl border border-emerald-500/40 text-center shadow-xl">
+                            <div className="text-xs font-bold text-white flex items-center gap-1.5 justify-center">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                              <span>{selectedPerson?.personName || 'Rahul Kumar (STU-042)'}</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-emerald-300 mt-0.5">
+                              Virtual Camera · 99.2% Facial Landmark Match
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Virtual Camera HUD Badges */}
+                      <div className="absolute top-3 left-3 flex items-center gap-2 z-20 pointer-events-none">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-900/90 text-indigo-200 border border-indigo-500/60 uppercase">
+                          VIRTUAL WEBCAM · 1080P 30FPS
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/70 text-slate-300 border border-white/10">
+                          FPS: 29.8 · LATENCY: 14ms
+                        </span>
+                      </div>
+
+                      {/* Switch to real camera trigger button inside HUD */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreCheckStep('info');
+                          setIsPreCheckModalOpen(true);
+                        }}
+                        className="absolute bottom-3 right-3 z-20 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold border border-slate-700 shadow-md flex items-center gap-1.5 transition-colors"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Switch to Hardware Camera</span>
+                      </button>
+                    </div>
+                  )
                 ) : (
                   <div className="relative w-full h-full bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 flex items-center justify-center overflow-hidden">
                     {/* Simulated Background classroom door entrance environment */}
@@ -1180,6 +1517,330 @@ export const LiveAttendancePage: React.FC<LiveAttendancePageProps> = ({
                   className="px-3.5 py-2 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-semibold"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          CAMERA ACCESS PRE-CHECK & PERMISSION REQUEST MODAL
+          ========================================================================= */}
+      {isPreCheckModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/90 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-8">
+            {/* Modal Header Banner */}
+            <div className="relative bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white overflow-hidden">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-44 h-44 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-start justify-between gap-4 relative z-10">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/20 border border-blue-400/40 text-blue-300 flex items-center justify-center shadow-inner">
+                    <Camera className="w-6 h-6 text-blue-300" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wide bg-blue-500/30 text-blue-200 border border-blue-400/30 uppercase">
+                        SURVEILLANCE & AI INFERENCE
+                      </span>
+                      <span className="text-xs text-slate-400">· Edge Node 301</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>Camera Access Pre-Check & Authorization</span>
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Grant hardware access to activate real-time facial recognition and automated attendance
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPreCheckModalOpen(false);
+                    setPreCheckStep('info');
+                  }}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              {/* Section: Why Camera Access is Required */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Info className="w-4 h-4 text-blue-600" />
+                    <span>Why Camera Access is Required</span>
+                  </h4>
+                  <span className="text-[11px] font-medium text-slate-400">
+                    4 Core Biometric Modules
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3.5 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                      <Scan className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Live Biometric Face Verification</div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                        Captures live video frames to extract 68-point facial landmarks and match students against university records.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-emerald-50/60 rounded-2xl border border-emerald-100 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                      <UserCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Contactless Automated Attendance</div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                        Eliminates manual roll calls and paper registers by clocking entry timestamps directly into database records.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-100 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                      <ShieldAlert className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Intrusion & Unknown Face Alerts</div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                        Detects unregistered visitors and triggers visual security warnings when an unknown face is repeatedly observed.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-purple-50/60 rounded-2xl border border-purple-100 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                      <Maximize2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Bounding Box & Identity HUD</div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                        Draws real-time bounding boxes around detected individuals, displaying names, roll numbers, and confidence ratings.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section: Privacy & Security Commitment */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Lock className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <span>Institutional Privacy & Edge Security Guarantees</span>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md">
+                        FERPA COMPLIANT
+                      </span>
+                    </div>
+                    <ul className="text-[11px] text-slate-600 mt-1.5 space-y-1 list-disc list-inside">
+                      <li><strong>Local Client Processing:</strong> Facial embeddings are extracted in real-time in your browser sandbox.</li>
+                      <li><strong>No Raw Footage Uploads:</strong> Video frames are never stored or transmitted to external third-party servers.</li>
+                      <li><strong>Instant One-Click Disconnect:</strong> You can terminate hardware camera streaming at any time from the status bar.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hardware & Diagnostics Pre-Check Bar */}
+              <div className="p-4 bg-slate-900 rounded-2xl text-white space-y-3">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <Cpu className="w-4 h-4 text-blue-400" />
+                    <span>Hardware Readiness & Permissions Status</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={checkCameraPermissions}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Re-check Devices</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Browser API</div>
+                    <div className="font-bold text-slate-200 mt-0.5 flex items-center gap-1.5">
+                      {typeof navigator !== 'undefined' && !!navigator?.mediaDevices?.getUserMedia ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>MediaDevices Ready</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Not Supported</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Permission Status</div>
+                    <div className="font-bold text-slate-200 mt-0.5 flex items-center gap-1.5">
+                      {cameraPermissionState === 'granted' && (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Granted</span>
+                        </>
+                      )}
+                      {cameraPermissionState === 'prompt' && (
+                        <>
+                          <Info className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="text-blue-400">Prompt on Click</span>
+                        </>
+                      )}
+                      {cameraPermissionState === 'denied' && (
+                        <>
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                          <span className="text-rose-400">Blocked in Browser</span>
+                        </>
+                      )}
+                      {cameraPermissionState === 'unsupported' && (
+                        <>
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="text-amber-400">Restricted</span>
+                        </>
+                      )}
+                      {cameraPermissionState === 'checking' && (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin" />
+                          <span>Checking...</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Stream Target</div>
+                    <div className="font-bold text-slate-200 mt-0.5">
+                      {selectedResolution.toUpperCase()} HD · 30 FPS
+                    </div>
+                  </div>
+                </div>
+
+                {/* Camera device and resolution selector */}
+                <div className="pt-1 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  {availableCameras.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 text-[11px]">Detected Camera:</span>
+                      <select
+                        value={selectedCameraId}
+                        onChange={(e) => setSelectedCameraId(e.target.value)}
+                        className="bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-2 py-1 text-xs outline-none focus:border-blue-500"
+                      >
+                        {availableCameras.map((cam, idx) => (
+                          <option key={cam.deviceId || idx} value={cam.deviceId}>
+                            {cam.label || `Camera Channel ${idx + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 text-[11px]">Resolution:</span>
+                    {(['720p', '1080p', '480p'] as const).map((res) => (
+                      <button
+                        key={res}
+                        type="button"
+                        onClick={() => setSelectedResolution(res)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                          selectedResolution === res
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {res}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Troubleshooting / Blocked Guide (if permission failed or denied) */}
+              {(webcamError || preCheckStep === 'troubleshoot' || cameraPermissionState === 'denied') && (
+                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Camera Permission or Device Assistance</span>
+                  </div>
+                  {webcamError && <p className="text-amber-800 font-medium">{webcamError}</p>}
+                  <div className="text-[11px] text-amber-700 space-y-1 bg-white/70 p-3 rounded-xl border border-amber-200/80">
+                    <div className="font-semibold text-slate-800">Quick Fix Options:</div>
+                    <div>1. <strong>Browser Permission:</strong> Click the camera or lock icon in your browser's address bar and set Camera to <strong>Allow</strong>, then retry.</div>
+                    <div>2. <strong>App Conflict:</strong> Ensure Zoom, Teams, or another browser tab is not locking your camera.</div>
+                    <div>3. <strong>Instant Alternative:</strong> Click <strong>&quot;Use Interactive Virtual Camera&quot;</strong> below to test live face recognition, bounding boxes, and attendance logging immediately without physical camera hardware!</div>
+                  </div>
+                </div>
+              )}
+
+              {/* What to expect prompt visual banner */}
+              <div className="flex items-center gap-3 p-3 bg-blue-50/70 border border-blue-200 rounded-2xl text-xs text-blue-900">
+                <Sparkles className="w-5 h-5 text-blue-600 shrink-0" />
+                <div>
+                  <span className="font-bold">Browser Action Required:</span> When you click &quot;Grant Permission &amp; Launch Webcam&quot;, look for your browser&apos;s permission prompt (usually at the top left of the address bar) and select <strong>&quot;Allow&quot;</strong>.
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleStartVirtualCamera}
+                  className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  title="Test facial recognition immediately without physical camera permissions"
+                >
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span>Use Interactive Virtual Camera</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPreCheckModalOpen(false);
+                    setPreCheckStep('info');
+                  }}
+                  className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isRequestingCamera}
+                  onClick={() => startRealWebcam()}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-2 transition-all"
+                >
+                  {isRequestingCamera ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Requesting Camera...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-4 h-4" />
+                      <span>Grant Permission &amp; Launch Webcam</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

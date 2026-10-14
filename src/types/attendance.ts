@@ -195,4 +195,23 @@ export interface AttendanceAlertTrigger {
   triggersCount: number;
 }
 
+export type UserRole = 'admin' | 'teacher' | 'student';
 
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatarUrl: string;
+  canMakeChanges: boolean; // only admin has permission to make changes
+  department?: string;
+  course?: string;
+  section?: string;
+  rollNo?: string;
+  designation?: string;
+  cabinNo?: string;
+  phone?: string;
+  lastLogin?: string;
+  studentId?: string;
+  teacherId?: string;
+}
