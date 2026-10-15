@@ -31,22 +31,172 @@ import {
   Sparkles,
   Radio,
   Share2,
+  GraduationCap,
+  Users,
+  Copy,
+  EyeOff,
 } from 'lucide-react';
 import { ADMIN_USER, INITIAL_ALERT_TRIGGERS } from '../../data/mockData';
-import { AttendanceAlertTrigger } from '../../types/attendance';
+import { AttendanceAlertTrigger, AuthUser, Student, Teacher } from '../../types/attendance';
 
 interface UserManagementPageProps {
   onLogout: () => void;
-  initialTab?: 'alerts' | 'profile' | 'rbac' | 'rules' | 'all';
+  initialTab?: 'accounts' | 'alerts' | 'profile' | 'rbac' | 'rules' | 'all';
+  registeredUsers?: AuthUser[];
+  onAddUserCredential?: (user: AuthUser, studentRecord?: Student, teacherRecord?: Teacher) => void;
+  students?: Student[];
+  teachers?: Teacher[];
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onLogout,
-  initialTab = 'alerts',
+  initialTab = 'accounts',
+  registeredUsers = [],
+  onAddUserCredential,
+  students = [],
+  teachers = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<'alerts' | 'profile' | 'rbac' | 'rules' | 'all'>(
+  const [activeTab, setActiveTab] = useState<'accounts' | 'alerts' | 'profile' | 'rbac' | 'rules' | 'all'>(
     initialTab
   );
+
+  // User Password Provisioning State
+  const [provRole, setProvRole] = useState<'student' | 'teacher'>('student');
+  const [provName, setProvName] = useState('');
+  const [provEmail, setProvEmail] = useState('');
+  const [provPassword, setProvPassword] = useState('Student@2024');
+  const [showProvPassword, setShowProvPassword] = useState(false);
+  const [provCourse, setProvCourse] = useState('MCA');
+  const [provSection, setProvSection] = useState('MCA-II A');
+  const [provRollNo, setProvRollNo] = useState('');
+  const [provDept, setProvDept] = useState('Computer Applications');
+  const [provDesignation, setProvDesignation] = useState('Assistant Professor');
+  const [provCabin, setProvCabin] = useState('Cabin 304');
+  const [provFaceRegistered, setProvFaceRegistered] = useState(true);
+  const [provSuccessReceipt, setProvSuccessReceipt] = useState<{
+    name: string;
+    email: string;
+    password: string;
+    role: string;
+    id: string;
+  } | null>(null);
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [accountSearch, setAccountSearch] = useState('');
+  const [accountFilterRole, setAccountFilterRole] = useState<'all' | 'student' | 'teacher' | 'admin'>('all');
+
+  const generateRandomPassword = () => {
+    const prefixes = ['SmartPass', 'Vision', 'EduKey', 'Campus', 'Alpha'];
+    const years = ['2026', '2025', '2024'];
+    const symbols = ['!', '@', '#', '$'];
+    const randPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const randYear = years[Math.floor(Math.random() * years.length)];
+    const randSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+    const num = Math.floor(10 + Math.random() * 90);
+    setProvPassword(`${randPrefix}${randYear}${randSymbol}${num}`);
+  };
+
+  const handleNameChange = (name: string) => {
+    setProvName(name);
+    if (!provEmail || provEmail.includes('@student.edu') || provEmail.includes('@college.edu')) {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '');
+      if (slug) {
+        setProvEmail(provRole === 'student' ? `${slug}@student.edu` : `${slug}@college.edu`);
+      }
+    }
+  };
+
+  const handleCreateAccountSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!provName.trim() || !provEmail.trim() || !provPassword.trim()) return;
+
+    const id =
+      provRole === 'student'
+        ? `STU-2024-${Math.floor(100 + Math.random() * 900)}`
+        : `TCH-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newAuthUser: AuthUser = {
+      id: `USR-${Date.now().toString().slice(-4)}`,
+      name: provName.trim(),
+      email: provEmail.trim().toLowerCase(),
+      password: provPassword.trim(),
+      role: provRole,
+      canMakeChanges: provRole === 'teacher',
+      avatarUrl:
+        provRole === 'student'
+          ? '/src/assets/images/avatar_student_rahul_1791905718978.jpg'
+          : '/src/assets/images/avatar_teacher_amit_1791905720315.jpg',
+      course: provRole === 'student' ? provCourse : undefined,
+      section: provRole === 'student' ? provSection : undefined,
+      rollNo: provRole === 'student' ? provRollNo || `24MCA${Math.floor(100 + Math.random() * 900)}` : undefined,
+      department: provRole === 'teacher' ? provDept : undefined,
+      designation: provRole === 'teacher' ? provDesignation : undefined,
+      cabinNo: provRole === 'teacher' ? provCabin : undefined,
+      studentId: provRole === 'student' ? id : undefined,
+      teacherId: provRole === 'teacher' ? id : undefined,
+      lastLogin: 'Never (New Account)',
+    };
+
+    let studentRec: Student | undefined;
+    let teacherRec: Teacher | undefined;
+
+    if (provRole === 'student') {
+      studentRec = {
+        id,
+        name: provName.trim(),
+        email: provEmail.trim().toLowerCase(),
+        phone: '+91 98000 12345',
+        course: provCourse,
+        section: provSection,
+        rollNo: newAuthUser.rollNo || '24MCA100',
+        attendancePercentage: 100,
+        faceRegistered: provFaceRegistered,
+        avatarUrl: newAuthUser.avatarUrl,
+        totalClasses: 1,
+        attendedClasses: 1,
+        statusToday: 'present',
+        lastSeen: 'Registered Today',
+      };
+    } else {
+      teacherRec = {
+        id,
+        name: provName.trim(),
+        email: provEmail.trim().toLowerCase(),
+        phone: '+91 98111 22334',
+        department: provDept,
+        designation: provDesignation,
+        attendanceStatus: 'present',
+        faceRegistered: provFaceRegistered,
+        avatarUrl: newAuthUser.avatarUrl,
+        cabinNo: provCabin,
+        assignedClassrooms: ['MCA Advanced Lab 301'],
+        lastSeen: 'Registered Today',
+      };
+    }
+
+    if (onAddUserCredential) {
+      onAddUserCredential(newAuthUser, studentRec, teacherRec);
+    }
+
+    setProvSuccessReceipt({
+      name: provName.trim(),
+      email: provEmail.trim().toLowerCase(),
+      password: provPassword.trim(),
+      role: provRole,
+      id,
+    });
+
+    setProvName('');
+    setProvEmail('');
+    generateRandomPassword();
+    setProvRollNo('');
+  };
+
+  const handleCopyCredentials = (text: string, id: string) => {
+    navigator.clipboard?.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2500);
+  };
 
   // Admin Profile State
   const [profile, setProfile] = useState({
@@ -326,8 +476,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       {/* Navigation Filter Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto text-xs font-semibold">
         <button
+          onClick={() => setActiveTab('accounts')}
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'accounts'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Key className="w-3.5 h-3.5" />
+          <span>Create User Passwords (Students &amp; Teachers)</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white font-mono font-bold">
+            PROVISION
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('alerts')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
             activeTab === 'alerts'
               ? 'bg-blue-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
@@ -342,7 +507,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         <button
           onClick={() => setActiveTab('profile')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
             activeTab === 'profile'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:bg-slate-100'
@@ -354,7 +519,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         <button
           onClick={() => setActiveTab('rbac')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
             activeTab === 'rbac'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:bg-slate-100'
@@ -366,7 +531,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         <button
           onClick={() => setActiveTab('rules')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
             activeTab === 'rules'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:bg-slate-100'
@@ -378,7 +543,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         <button
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg transition-colors ${
+          className={`px-3 py-1.5 rounded-lg transition-colors shrink-0 ${
             activeTab === 'all'
               ? 'bg-slate-900 text-white'
               : 'text-slate-600 hover:bg-slate-100'
@@ -387,6 +552,502 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           View All Settings
         </button>
       </div>
+
+      {/* =========================================================================
+          SECTION: STUDENT & TEACHER USER PASSWORD PROVISIONING & REGISTRATION
+          ========================================================================= */}
+      {(activeTab === 'accounts' || activeTab === 'all') && (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-2xl shadow-lg border border-blue-700/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/40">
+                  ADMINISTRATIVE CREDENTIAL CONSOLE
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  URL: /admin
+                </span>
+              </div>
+              <h2 className="text-xl font-extrabold tracking-tight">
+                Create User Passwords &amp; Register on Website
+              </h2>
+              <p className="text-xs text-blue-200 mt-1 max-w-2xl leading-relaxed">
+                As the administrator, create and manage login passwords for both Students and Teachers.
+                Registered users will immediately be able to log in to the portal with their new credentials.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 font-mono text-blue-100 font-bold">
+                {registeredUsers.length} Active Accounts
+              </span>
+            </div>
+          </div>
+
+          {/* Success Receipt Modal/Card */}
+          {provSuccessReceipt && (
+            <div className="p-5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl text-xs text-slate-800 space-y-3 shadow-md animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold">
+                    <Check className="w-5 h-5 stroke-[3]" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      User Account Successfully Created &amp; Enrolled!
+                    </h4>
+                    <p className="text-[11px] text-slate-600">
+                      This user has been registered in the system directory and can now log in at the portal.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setProvSuccessReceipt(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-emerald-100"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-emerald-200">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Full Name</span>
+                  <div className="font-bold text-slate-900">{provSuccessReceipt.name}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Role</span>
+                  <div className="font-bold text-blue-700 capitalize">{provSuccessReceipt.role}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Login Email</span>
+                  <div className="font-mono font-semibold text-slate-800 truncate">{provSuccessReceipt.email}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Login Password</span>
+                  <div className="font-mono font-bold text-emerald-700">{provSuccessReceipt.password}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-500 font-medium">
+                  Give these credentials to the user to sign in at the Student &amp; Teacher portal.
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopyCredentials(
+                      `SmartClass Attendance Portal\nEmail: ${provSuccessReceipt.email}\nPassword: ${provSuccessReceipt.password}\nRole: ${provSuccessReceipt.role}`,
+                      'receipt'
+                    )
+                  }
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold flex items-center gap-1.5 shadow-xs"
+                >
+                  {copiedId === 'receipt' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Credentials</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Account Creation Form */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Provision User Account &amp; Password</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Register a new student or faculty member and configure their login credentials
+                  </p>
+                </div>
+              </div>
+
+              {/* Role Toggle */}
+              <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProvRole('student');
+                    if (provName) handleNameChange(provName);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                    provRole === 'student' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  <span>Student Account</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProvRole('teacher');
+                    if (provName) handleNameChange(provName);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                    provRole === 'teacher' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Teacher / Faculty</span>
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateAccountSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Full Legal Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={provName}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder={provRole === 'student' ? 'e.g. Tanvi Joshi' : 'e.g. Dr. Ramesh Gupta'}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Portal Login Email (Username) *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={provEmail}
+                    onChange={(e) => setProvEmail(e.target.value)}
+                    placeholder={provRole === 'student' ? 'tanvi.joshi@student.edu' : 'ramesh.gupta@college.edu'}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Password configuration */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Set User Login Password *</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={generateRandomPassword}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Generate Password</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showProvPassword ? 'text' : 'password'}
+                      required
+                      value={provPassword}
+                      onChange={(e) => setProvPassword(e.target.value)}
+                      placeholder="Enter initial password"
+                      className="w-full pl-3 pr-9 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowProvPassword(!showProvPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showProvPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    User will log in using this password on the Student &amp; Teacher login page.
+                  </p>
+                </div>
+
+                {/* Role Specific Details */}
+                {provRole === 'student' ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Course</label>
+                      <select
+                        value={provCourse}
+                        onChange={(e) => setProvCourse(e.target.value)}
+                        className="w-full px-2 py-2 bg-white rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="MCA">MCA</option>
+                        <option value="B.Tech CSE">B.Tech CSE</option>
+                        <option value="BCA">BCA</option>
+                        <option value="M.Tech">M.Tech AI</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Section</label>
+                      <input
+                        type="text"
+                        value={provSection}
+                        onChange={(e) => setProvSection(e.target.value)}
+                        className="w-full px-2 py-2 bg-white rounded-xl border border-slate-200 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Roll No</label>
+                      <input
+                        type="text"
+                        value={provRollNo}
+                        onChange={(e) => setProvRollNo(e.target.value)}
+                        placeholder="24MCA105"
+                        className="w-full px-2 py-2 bg-white rounded-xl border border-slate-200 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Department</label>
+                      <select
+                        value={provDept}
+                        onChange={(e) => setProvDept(e.target.value)}
+                        className="w-full px-2 py-2 bg-white rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="Computer Applications">MCA</option>
+                        <option value="Computer Science">B.Tech CSE</option>
+                        <option value="Information Tech">IT</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Designation</label>
+                      <input
+                        type="text"
+                        value={provDesignation}
+                        onChange={(e) => setProvDesignation(e.target.value)}
+                        className="w-full px-2 py-2 bg-white rounded-xl border border-slate-200 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Cabin</label>
+                      <input
+                        type="text"
+                        value={provCabin}
+                        onChange={(e) => setProvCabin(e.target.value)}
+                        className="w-full px-2 py-2 bg-white rounded-xl border border-slate-200 text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Biometric Enrollment Option */}
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-slate-800">
+                    Facial Biometric Enrollment for Entrance Camera
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Generate initial 512-dimensional face recognition vector for automated gate attendance
+                  </div>
+                </div>
+                <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={provFaceRegistered}
+                    onChange={(e) => setProvFaceRegistered(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Active Enrollment (512-D)</span>
+                </label>
+              </div>
+
+              {/* Submit Button */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Create User Credentials &amp; Register on Website</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Registered Portal Users Directory Table */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Key className="w-4 h-4 text-blue-600" />
+                  <span>Registered Portal Users &amp; Credentials</span>
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  All student, faculty, and administrator login accounts provisioned on this website
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {/* Search */}
+                <input
+                  type="text"
+                  placeholder="Filter by name or email..."
+                  value={accountSearch}
+                  onChange={(e) => setAccountSearch(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:border-blue-500 w-full sm:w-48"
+                />
+
+                {/* Filter */}
+                <select
+                  value={accountFilterRole}
+                  onChange={(e) => setAccountFilterRole(e.target.value as any)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white font-semibold"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="student">Students</option>
+                  <option value="teacher">Teachers</option>
+                  <option value="admin">Admins</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold uppercase text-[10px]">
+                  <tr>
+                    <th className="py-2.5 px-4">User Profile</th>
+                    <th className="py-2.5 px-4">System Role</th>
+                    <th className="py-2.5 px-4">Login Email (Username)</th>
+                    <th className="py-2.5 px-4">Current Password</th>
+                    <th className="py-2.5 px-4">Permissions</th>
+                    <th className="py-2.5 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {registeredUsers
+                    .filter((u) => {
+                      const matchesRole = accountFilterRole === 'all' || u.role === accountFilterRole;
+                      const matchesSearch =
+                        u.name.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                        u.email.toLowerCase().includes(accountSearch.toLowerCase());
+                      return matchesRole && matchesSearch;
+                    })
+                    .map((user) => {
+                      const isRevealed = revealedPasswords[user.id];
+                      return (
+                        <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={user.avatarUrl}
+                                alt={user.name}
+                                className="w-8 h-8 rounded-lg object-cover border border-slate-200"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+                                }}
+                              />
+                              <div>
+                                <div className="font-bold text-slate-900">{user.name}</div>
+                                <div className="text-[11px] text-slate-400 font-mono">
+                                  {user.rollNo || user.teacherId || user.id}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {user.role === 'admin' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                <Shield className="w-3 h-3" />
+                                <span>Administrator</span>
+                              </span>
+                            ) : user.role === 'teacher' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                <Users className="w-3 h-3" />
+                                <span>Teacher (Edit &amp; Export)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                <GraduationCap className="w-3 h-3" />
+                                <span>Student (View &amp; Export)</span>
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 font-mono font-medium text-slate-800">
+                            {user.email}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded border border-slate-200 text-slate-700">
+                                {isRevealed ? user.password || '••••••••' : '••••••••'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRevealedPasswords((prev) => ({
+                                    ...prev,
+                                    [user.id]: !prev[user.id],
+                                  }))
+                                }
+                                className="text-slate-400 hover:text-slate-600 p-0.5"
+                                title={isRevealed ? 'Hide Password' : 'Show Password'}
+                              >
+                                {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {user.role === 'admin' ? (
+                              <span className="text-purple-700 font-semibold text-[11px]">Master Surveillance</span>
+                            ) : user.role === 'teacher' ? (
+                              <span className="text-indigo-700 font-semibold text-[11px]">Edit Attendance &amp; Export</span>
+                            ) : (
+                              <span className="text-emerald-700 font-semibold text-[11px]">View &amp; Export Only</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopyCredentials(
+                                  `Email: ${user.email}\nPassword: ${user.password || 'admin123'}\nRole: ${user.role}`,
+                                  user.id
+                                )
+                              }
+                              className="px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                            >
+                              {copiedId === user.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                                  <span className="text-emerald-600">Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           SECTION: ATTENDANCE ALERT CONFIGURATION (EMAIL & SMS NOTIFICATIONS)

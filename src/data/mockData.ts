@@ -25,6 +25,7 @@ export const DEMO_ADMIN_USER: AuthUser = {
   id: 'USR-ADM-01',
   name: 'Dr. Sunita Rao',
   email: 'admin@college.edu',
+  password: 'admin123',
   role: 'admin',
   avatarUrl: '/src/assets/images/avatar_admin_sunita_1791905720378.jpg',
   department: 'Department of Computer Applications',
@@ -37,12 +38,13 @@ export const DEMO_TEACHER_USER: AuthUser = {
   id: 'USR-TCH-01',
   name: 'Prof. Amit Verma',
   email: 'amit.verma@college.edu',
+  password: 'teacher123',
   role: 'teacher',
   avatarUrl: '/src/assets/images/avatar_teacher_amit_1791905720315.jpg',
   department: 'Computer Applications',
   designation: 'Associate Professor & Lab Incharge',
   cabinNo: 'Cabin 304, 3rd Floor',
-  canMakeChanges: false, // Teacher cannot make administrative changes
+  canMakeChanges: true, // Teacher can edit anything and export
   teacherId: 'TCH-108',
   phone: '+91 98230 45678',
   lastLogin: 'Today, 08:45 AM',
@@ -52,12 +54,13 @@ export const DEMO_STUDENT_USER: AuthUser = {
   id: 'USR-STU-01',
   name: 'Rahul Kumar',
   email: 'rahul.kumar@student.edu',
+  password: 'student123',
   role: 'student',
   avatarUrl: '/src/assets/images/avatar_student_rahul_1791905718978.jpg',
   course: 'MCA (Computer Applications)',
   section: 'MCA-II A',
   rollNo: '24MCA042',
-  canMakeChanges: false, // Student cannot make changes
+  canMakeChanges: false, // Student cannot make changes (view & export only)
   studentId: 'STU-2024-042',
   phone: '+91 98451 22345',
   lastLogin: 'Today, 09:00 AM',

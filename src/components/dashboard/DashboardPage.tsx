@@ -21,7 +21,7 @@ import {
   WEEKLY_ATTENDANCE_TREND,
   CLASSROOMS,
 } from '../../data/mockData';
-import { AttendanceRecord, Student, Teacher } from '../../types/attendance';
+import { AttendanceRecord, Student, Teacher, AuthUser } from '../../types/attendance';
 import { NavItem } from '../layout/Sidebar';
 
 interface DashboardPageProps {
@@ -31,6 +31,7 @@ interface DashboardPageProps {
   attendanceRecords: AttendanceRecord[];
   students: Student[];
   teachers: Teacher[];
+  currentUser?: AuthUser | null;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -38,7 +39,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onOpenAddStudent,
   onOpenAddTeacher,
   attendanceRecords,
+  currentUser = null,
 }) => {
+  const isStudent = currentUser?.role === 'student';
   const [activeHourlyTooltip, setActiveHourlyTooltip] = useState<number | null>(null);
 
   // SVG Chart Dimensions
@@ -87,26 +90,35 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <Video className="w-4 h-4" />
             <span>Open Live Camera Feed</span>
           </button>
-          <button
-            onClick={onOpenAddStudent}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors"
-          >
-            <Plus className="w-4 h-4 text-blue-400" />
-            <span>Add Student</span>
-          </button>
-          <button
-            onClick={onOpenAddTeacher}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors"
-          >
-            <Plus className="w-4 h-4 text-emerald-400" />
-            <span>Add Teacher</span>
-          </button>
+          {!isStudent ? (
+            <>
+              <button
+                onClick={onOpenAddStudent}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-blue-400" />
+                <span>Add Student</span>
+              </button>
+              <button
+                onClick={onOpenAddTeacher}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-emerald-400" />
+                <span>Add Teacher</span>
+              </button>
+            </>
+          ) : (
+            <div className="px-3 py-1.5 rounded-xl bg-blue-950/80 border border-blue-800/60 text-[11px] font-semibold text-blue-300 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              <span>Student View &amp; Export Access</span>
+            </div>
+          )}
           <button
             onClick={() => onNavigate('records')}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-amber-400" />
-            <span>Attendance Log</span>
+            <span>Attendance Log &amp; Export</span>
           </button>
         </div>
       </div>

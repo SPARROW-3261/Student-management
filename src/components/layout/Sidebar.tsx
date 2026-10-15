@@ -57,17 +57,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     badge?: string;
-    adminOnly?: boolean;
   }[] = isStudent
     ? [
         { id: 'dashboard', label: 'My Attendance Portal', icon: GraduationCap },
         { id: 'live', label: 'Classroom Live Feed', icon: Video, badge: 'VIEW' },
-        { id: 'records', label: 'My Attendance Logs', icon: ClipboardList },
+        { id: 'records', label: 'Attendance Logs', icon: ClipboardList, badge: 'EXPORT' },
         { id: 'reports', label: 'Course Analytics', icon: BarChart3 },
-        { id: 'students', label: 'Classmates Directory', icon: Users, badge: 'Read Only' },
+        { id: 'students', label: 'Student Directory', icon: Users, badge: 'EXPORT' },
         { id: 'classrooms', label: 'Campus Classrooms', icon: DoorOpen },
-        { id: 'face_settings', label: 'Face Engine Config', icon: ScanFace, badge: 'Admin Only', adminOnly: true },
-        { id: 'settings', label: 'System Settings', icon: Settings, badge: 'Admin Only', adminOnly: true },
       ]
     : [
         { id: 'dashboard', label: isTeacher ? 'Faculty Dashboard' : 'Dashboard', icon: LayoutDashboard },
@@ -77,9 +74,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'classrooms', label: 'Classroom Management', icon: DoorOpen },
         { id: 'records', label: 'Attendance Records', icon: ClipboardList },
         { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
-        { id: 'face_settings', label: 'Face Recognition Settings', icon: ScanFace, badge: !isAdmin ? 'Admin Only' : undefined, adminOnly: !isAdmin },
-        { id: 'users', label: 'User Management', icon: UserCheck, badge: !isAdmin ? 'Admin Only' : undefined, adminOnly: !isAdmin },
-        { id: 'settings', label: 'Settings', icon: Settings, badge: !isAdmin ? 'Admin Only' : undefined, adminOnly: !isAdmin },
+        ...(isAdmin
+          ? [
+              { id: 'users' as NavItem, label: 'User & Password Provisioning', icon: UserCheck, badge: 'ADMIN' },
+              { id: 'face_settings' as NavItem, label: 'Face Recognition Settings', icon: ScanFace },
+              { id: 'settings' as NavItem, label: 'System Configuration', icon: Settings },
+            ]
+          : []),
       ];
 
   const handleNavClick = (id: NavItem) => {

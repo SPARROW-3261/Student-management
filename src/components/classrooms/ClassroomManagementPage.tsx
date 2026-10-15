@@ -15,7 +15,7 @@ import {
   ArrowRight,
   ShieldCheck,
 } from 'lucide-react';
-import { Classroom, AttendanceRecord, Student } from '../../types/attendance';
+import { Classroom, AttendanceRecord, Student, AuthUser } from '../../types/attendance';
 
 interface ClassroomManagementPageProps {
   classrooms: Classroom[];
@@ -24,6 +24,8 @@ interface ClassroomManagementPageProps {
   onDeleteClassroom: (id: string) => void;
   attendanceRecords: AttendanceRecord[];
   students: Student[];
+  currentUser?: AuthUser | null;
+  canEdit?: boolean;
 }
 
 export const ClassroomManagementPage: React.FC<ClassroomManagementPageProps> = ({
@@ -33,7 +35,15 @@ export const ClassroomManagementPage: React.FC<ClassroomManagementPageProps> = (
   onDeleteClassroom,
   attendanceRecords,
   students,
+  currentUser = null,
+  canEdit,
 }) => {
+  const userCanEdit =
+    canEdit !== undefined
+      ? canEdit
+      : currentUser
+      ? currentUser.role === 'teacher' || currentUser.role === 'admin'
+      : true;
   const [selectedClassroomForDetails, setSelectedClassroomForDetails] = useState<Classroom | null>(
     null
   );
@@ -98,13 +108,20 @@ export const ClassroomManagementPage: React.FC<ClassroomManagementPageProps> = (
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Classroom</span>
-        </button>
+        {userCanEdit ? (
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Classroom</span>
+          </button>
+        ) : (
+          <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+            <span>Classroom Directory (View Only)</span>
+          </div>
+        )}
       </div>
 
       {/* Classroom Cards Grid */}

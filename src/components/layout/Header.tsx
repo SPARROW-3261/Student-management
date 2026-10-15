@@ -17,6 +17,7 @@ import {
   Users,
   ShieldCheck,
   Lock,
+  Key,
 } from 'lucide-react';
 import { ADMIN_USER, CLASSROOMS } from '../../data/mockData';
 import { NavItem } from './Sidebar';
@@ -209,10 +210,44 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
+          {/* Route & Role Context Badges */}
+          {currentUser?.role === 'admin' && (
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-white border border-slate-700 text-[11px] font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="font-bold text-slate-300">CONSOLE:</span>
+              <span className="text-blue-400 font-bold">/admin</span>
+            </div>
+          )}
+
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={() => onSelectNav('users')}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-colors shadow-2xs cursor-pointer"
+              title="Create student and teacher user passwords"
+            >
+              <Key className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Provision Passwords</span>
+            </button>
+          )}
+
+          {currentUser?.role === 'student' && (
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-800">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+              <span>Student (View &amp; Export Access)</span>
+            </div>
+          )}
+
+          {currentUser?.role === 'teacher' && (
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-[11px] font-semibold text-indigo-800">
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Faculty (Full Edit &amp; Export)</span>
+            </div>
+          )}
+
           {/* Presentation Viva Architecture Button */}
           <button
             onClick={onOpenPresentationModal}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors"
+            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors cursor-pointer"
             title="View MCA Project System Architecture"
           >
             <Shield className="w-3.5 h-3.5 text-indigo-600" />

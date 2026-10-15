@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   GraduationCap,
   Search,
@@ -18,8 +18,18 @@ import {
   FileSpreadsheet,
   Check,
   FileUp,
+  RefreshCw,
+  Sparkles,
+  ShieldCheck,
+  Image as ImageIcon,
+  Lock,
+  Shield,
+  Trash,
+  Video,
+  VideoOff,
+  RotateCcw,
 } from 'lucide-react';
-import { Student } from '../../types/attendance';
+import { Student, AuthUser } from '../../types/attendance';
 
 interface StudentManagementPageProps {
   students: Student[];
@@ -29,6 +39,9 @@ interface StudentManagementPageProps {
   onBulkImportStudents?: (imported: Student[]) => void;
   isAddModalOpen: boolean;
   setIsAddModalOpen: (open: boolean) => void;
+  isAdmin?: boolean;
+  currentUser?: AuthUser | null;
+  canEdit?: boolean;
 }
 
 export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
@@ -39,7 +52,18 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
   onBulkImportStudents,
   isAddModalOpen,
   setIsAddModalOpen,
+  isAdmin = true,
+  currentUser = null,
+  canEdit,
 }) => {
+  const isStudentUser = currentUser?.role === 'student';
+  const userCanEdit =
+    canEdit !== undefined
+      ? canEdit
+      : currentUser
+      ? currentUser.role === 'teacher' || currentUser.role === 'admin'
+      : isAdmin;
+
   const [searchTerm, setSearchTerm] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -69,7 +93,29 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
     section: 'MCA-II A',
     rollNo: '24MCA',
     faceRegistered: true,
+    avatarUrl: '/src/assets/images/avatar_student_rahul_1791905718978.jpg',
   });
+
+  // Photo upload and Webcam snapshot states
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
+  const webcamCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const webcamStreamRef = useRef<MediaStream | null>(null);
+  const [isWebcamModalOpen, setIsWebcamModalOpen] = useState(false);
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const [isVirtualWebcam, setIsVirtualWebcam] = useState(false);
+  const [photoTarget, setPhotoTarget] = useState<'add' | 'edit'>('add');
+  const [webcamError, setWebcamError] = useState<string | null>(null);
+  const [capturedPhotoPreview, setCapturedPhotoPreview] = useState<string | null>(null);
+  const [faceEnrolledBadge, setFaceEnrolledBadge] = useState<string | null>(null);
+
+  // Curated student sample faces
+  const sampleStudentFaces = [
+    { name: 'Rahul K. (MCA)', url: '/src/assets/images/avatar_student_rahul_1791905718978.jpg' },
+    { name: 'Priya S. (CSE)', url: '/src/assets/images/avatar_student_priya_1791905720259.jpg' },
+    { name: 'Amit V. (Faculty)', url: '/src/assets/images/avatar_teacher_amit_1791905720315.jpg' },
+    { name: 'Sara L. (BCA)', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80' },
+  ];
 
   const resetForm = () => {
     setFormData({
@@ -81,7 +127,323 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
       section: 'MCA-II A',
       rollNo: '24MCA',
       faceRegistered: true,
+      avatarUrl: '/src/assets/images/avatar_student_rahul_1791905718978.jpg',
     });
+    setCapturedPhotoPreview(null);
+    setFaceEnrolledBadge(null);
+  };
+
+  // Stop webcam tracks helper
+  const stopWebcamTracks = () => {
+    if (webcamStreamRef.current) {
+      webcamStreamRef.current.getTracks().forEach((track) => track.stop());
+      webcamStreamRef.current = null;
+    }
+    setIsWebcamActive(false);
+  };
+
+  // Clean up webcam on unmount
+  useEffect(() => {
+    return () => {
+      stopWebcamTracks();
+    };
+  }, []);
+
+  // Start webcam when webcam modal is opened
+  const startWebcamStream = async (forceVirtual = false) => {
+    setWebcamError(null);
+    setCapturedPhotoPreview(null);
+    stopWebcamTracks();
+
+    if (forceVirtual) {
+      setIsVirtualWebcam(true);
+      setIsWebcamActive(true);
+      return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+      setWebcamError('Webcam API is not supported in this browser context. You can use the Virtual Biometric Camera or upload an image file.');
+      setIsVirtualWebcam(true);
+      setIsWebcamActive(true);
+      return;
+    }
+
+    try {
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+
+      webcamStreamRef.current = stream;
+      setIsWebcamActive(true);
+      setIsVirtualWebcam(false);
+
+      if (webcamVideoRef.current) {
+        webcamVideoRef.current.muted = true;
+        webcamVideoRef.current.defaultMuted = true;
+        webcamVideoRef.current.srcObject = stream;
+        webcamVideoRef.current.play().catch((err) => console.warn('Play video catch:', err));
+      }
+    } catch (err: any) {
+      console.warn('Webcam stream error:', err);
+      let msg = 'Could not access hardware camera.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = 'Camera access was denied by browser. Switched to Virtual Biometric Camera for snapshot simulation.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'No camera hardware detected. Switched to Virtual Biometric Camera.';
+      } else {
+        msg = `Camera issue: ${err.message || 'stream failed'}. Switched to Virtual Biometric Camera.`;
+      }
+      setWebcamError(msg);
+      setIsVirtualWebcam(true);
+      setIsWebcamActive(true);
+    }
+  };
+
+  // Open Webcam Modal
+  const handleOpenWebcamModal = (target: 'add' | 'edit' = 'add') => {
+    setPhotoTarget(target);
+    setIsWebcamModalOpen(true);
+    startWebcamStream();
+  };
+
+  // Close Webcam Modal
+  const handleCloseWebcamModal = () => {
+    stopWebcamTracks();
+    setIsWebcamModalOpen(false);
+    setCapturedPhotoPreview(null);
+    setWebcamError(null);
+  };
+
+  // Capture Snapshot from video feed or virtual biometric generator onto canvas
+  const handleCaptureSnapshot = () => {
+    const canvas = webcamCanvasRef.current;
+    if (!canvas) return;
+
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const currentId = photoTarget === 'edit' && editingStudent ? editingStudent.id : formData.id;
+
+    if (isVirtualWebcam || !webcamStreamRef.current || !webcamVideoRef.current) {
+      // Draw realistic biometric portrait snapshot onto canvas
+      const grad = ctx.createLinearGradient(0, 0, 640, 480);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(0.5, '#1e293b');
+      grad.addColorStop(1, '#090d16');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 640, 480);
+
+      // Grid overlay
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < 640; x += 32) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 480);
+        ctx.stroke();
+      }
+      for (let y = 0; y < 480; y += 32) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(640, y);
+        ctx.stroke();
+      }
+
+      // Torso / Shoulders
+      ctx.fillStyle = '#2563eb';
+      ctx.beginPath();
+      ctx.ellipse(320, 470, 200, 110, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Neck
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(290, 310, 60, 80);
+
+      // Head / Face
+      ctx.fillStyle = '#f1f5f9';
+      ctx.beginPath();
+      ctx.ellipse(320, 220, 105, 135, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Hair
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(320, 180, 110, Math.PI, 0, false);
+      ctx.fill();
+
+      // Eyebrows
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(260, 185); ctx.lineTo(295, 188);
+      ctx.moveTo(345, 188); ctx.lineTo(380, 185);
+      ctx.stroke();
+
+      // Eyes
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.ellipse(278, 205, 10, 7, 0, 0, Math.PI * 2);
+      ctx.ellipse(362, 205, 10, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil cyan highlights
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(280, 204, 3, 0, Math.PI * 2);
+      ctx.arc(364, 204, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Nose bridge
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(320, 205);
+      ctx.lineTo(320, 240);
+      ctx.lineTo(326, 245);
+      ctx.stroke();
+
+      // Smile
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(320, 265, 32, 0.2 * Math.PI, 0.8 * Math.PI);
+      ctx.stroke();
+
+      // 68 Facial Landmark Points
+      ctx.fillStyle = '#10b981';
+      for (let i = 0; i < 32; i++) {
+        const angle = (i / 32) * Math.PI * 2;
+        const lx = 320 + Math.cos(angle) * 112;
+        const ly = 220 + Math.sin(angle) * 142;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Biometric HUD stamps
+      ctx.fillStyle = '#10b981';
+      ctx.font = 'bold 15px monospace';
+      ctx.fillText('BIOMETRIC SNAPSHOT CAPTURED', 24, 38);
+      ctx.fillStyle = '#67e8f9';
+      ctx.font = '12px monospace';
+      ctx.fillText(`ENROLLMENT ID: ${currentId} | VECTOR: 512-D L2-NORM`, 24, 60);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(new Date().toLocaleString(), 24, 80);
+
+      // Target reticle corners
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(180, 110); ctx.lineTo(180, 70); ctx.lineTo(220, 70); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(460, 110); ctx.lineTo(460, 70); ctx.lineTo(420, 70); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(180, 360); ctx.lineTo(180, 400); ctx.lineTo(220, 400); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(460, 360); ctx.lineTo(460, 400); ctx.lineTo(420, 400); ctx.stroke();
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      setCapturedPhotoPreview(dataUrl);
+      return;
+    }
+
+    const video = webcamVideoRef.current;
+    if (!video) return;
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+    canvas.width = width;
+    canvas.height = height;
+
+    // Flip horizontally so mirror matches user perception
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, width, height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    setCapturedPhotoPreview(dataUrl);
+    stopWebcamTracks();
+  };
+
+  // Confirm and apply the captured photo
+  const handleConfirmCapturedPhoto = () => {
+    if (capturedPhotoPreview) {
+      if (photoTarget === 'edit' && editingStudent) {
+        setEditingStudent((prev) =>
+          prev ? { ...prev, avatarUrl: capturedPhotoPreview, faceRegistered: true } : null
+        );
+        setFaceEnrolledBadge('✓ Biometric Face Vector Updated from Webcam Snapshot');
+      } else {
+        setFormData((prev) => ({
+          ...prev,
+          avatarUrl: capturedPhotoPreview,
+          faceRegistered: true,
+        }));
+        setFaceEnrolledBadge('✓ Biometric Face Vector Enrolled from Webcam Snapshot');
+      }
+      setTimeout(() => setFaceEnrolledBadge(null), 4000);
+    }
+    handleCloseWebcamModal();
+  };
+
+  // Handle Image File Upload Selection
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (JPEG, PNG, WebP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        if (photoTarget === 'edit' && editingStudent) {
+          setEditingStudent((prev) =>
+            prev ? { ...prev, avatarUrl: dataUrl, faceRegistered: true } : null
+          );
+          setFaceEnrolledBadge('✓ Face Photo Enrolled (68 Landmarks Vector Generated)');
+        } else {
+          setFormData((prev) => ({
+            ...prev,
+            avatarUrl: dataUrl,
+            faceRegistered: true,
+          }));
+          setFaceEnrolledBadge('✓ Face Photo Enrolled (68 Landmarks Vector Generated)');
+        }
+        setTimeout(() => setFaceEnrolledBadge(null), 4000);
+      }
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be chosen again if needed
+    e.target.value = '';
+  };
+
+  // Use Sample Student Face Vector
+  const handleUseSampleFace = (sampleUrl: string) => {
+    if (photoTarget === 'edit' && editingStudent) {
+      setEditingStudent((prev) =>
+        prev ? { ...prev, avatarUrl: sampleUrl, faceRegistered: true } : null
+      );
+      setFaceEnrolledBadge('✓ Sample Biometric Face Vector Enrolled');
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        avatarUrl: sampleUrl,
+        faceRegistered: true,
+      }));
+      setFaceEnrolledBadge('✓ Sample Biometric Face Vector Enrolled');
+    }
+    setTimeout(() => setFaceEnrolledBadge(null), 4000);
+    if (isWebcamModalOpen) {
+      handleCloseWebcamModal();
+    }
   };
 
   const handleSaveNewStudent = (e: React.FormEvent) => {
@@ -98,7 +460,7 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
       rollNo: formData.rollNo || '24MCA099',
       attendancePercentage: 100,
       faceRegistered: formData.faceRegistered,
-      avatarUrl: '/src/assets/images/avatar_student_rahul_1791905718978.jpg',
+      avatarUrl: formData.avatarUrl || '/src/assets/images/avatar_student_rahul_1791905718978.jpg',
       totalClasses: 1,
       attendedClasses: 1,
       lastSeen: 'Registered Today',
@@ -264,8 +626,79 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
     return matchesSearch && matchesCourse && matchesFace && matchesStatus;
   });
 
+  // Export Student Directory to CSV
+  const handleExportCSV = () => {
+    const headers = [
+      'Student ID',
+      'Roll No',
+      'Full Name',
+      'Email',
+      'Phone',
+      'Course',
+      'Section',
+      'Attendance %',
+      'Attended Classes',
+      'Total Classes',
+      'Face Enrolled',
+      'Status Today',
+    ];
+    const rows = filteredStudents.map((s) => [
+      s.id,
+      `"${s.rollNo}"`,
+      `"${s.name}"`,
+      s.email,
+      s.phone,
+      `"${s.course}"`,
+      `"${s.section}"`,
+      `${s.attendancePercentage}%`,
+      s.attendedClasses,
+      s.totalClasses,
+      s.faceRegistered ? 'Yes' : 'No',
+      s.statusToday,
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute(
+      'download',
+      `SmartClass_Student_Directory_${courseFilter === 'all' ? 'All_Courses' : courseFilter}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Student View-Only Info Banner */}
+      {!userCanEdit && (
+        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl text-xs text-blue-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-blue-600 text-white shrink-0">
+              <GraduationCap className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold">Student Viewing &amp; Export Mode:</span>
+              <span className="text-blue-700 ml-1">
+                You have viewing and export access. You are not allowed to edit, add, or delete any records.
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-xs shrink-0 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Roster CSV</span>
+          </button>
+        </div>
+      )}
+
       {/* Header & Action Controls */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -279,30 +712,50 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Bulk CSV Import Button */}
+          {/* Always Available Export CSV Button */}
           <button
-            onClick={() => {
-              setBulkParseError(null);
-              setParsedStudents([]);
-              setBulkCsvText('');
-              setIsBulkModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-colors"
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-colors cursor-pointer"
+            title="Download CSV spreadsheet of current student roster"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Bulk Import CSV</span>
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>Export to CSV</span>
           </button>
 
-          <button
-            onClick={() => {
-              resetForm();
-              setIsAddModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Student</span>
-          </button>
+          {/* Teacher and Admin Only Editing Controls */}
+          {userCanEdit ? (
+            <>
+              {/* Bulk CSV Import Button */}
+              <button
+                onClick={() => {
+                  setBulkParseError(null);
+                  setParsedStudents([]);
+                  setBulkCsvText('');
+                  setIsBulkModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-colors cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Bulk Import CSV</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  resetForm();
+                  setIsAddModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Student</span>
+              </button>
+            </>
+          ) : (
+            <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Editing Restricted (Student Account)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -489,20 +942,24 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => setEditingStudent(student)}
-                            className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="Edit Student"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeletingStudentId(student.id)}
-                            className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="Delete Student"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {userCanEdit && (
+                            <>
+                              <button
+                                onClick={() => setEditingStudent(student)}
+                                className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Student & Biometric Vector"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setDeletingStudentId(student.id)}
+                                className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Student"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -868,7 +1325,7 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
               </div>
 
               {/* Face Registration Box */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ScanFace className="w-4 h-4 text-blue-600" />
@@ -888,24 +1345,96 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
                     <span>Capture Face Vector</span>
                   </label>
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Enrolls 512-dimensional facial embedding vector for entrance camera recognition.
-                </p>
+
+                {/* Avatar Preview & Status */}
+                <div className="flex items-center gap-3 p-2.5 bg-white border border-slate-200/90 rounded-xl shadow-xs">
+                  <div className="relative">
+                    <img
+                      src={formData.avatarUrl}
+                      alt="Student Face"
+                      className="w-14 h-14 rounded-xl object-cover border-2 border-blue-500/30 shadow-xs bg-slate-100"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                    {formData.faceRegistered && (
+                      <span className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-0.5 shadow-xs" title="Biometric Vector Enrolled">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-800">Biometric Profile</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        512-D Active
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {formData.faceRegistered ? 'Ready for live entrance biometric detection' : 'Pending enrollment photo capture'}
+                    </p>
+                    {faceEnrolledBadge && (
+                      <div className="text-[10px] font-semibold text-emerald-600 animate-pulse mt-0.5 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" />
+                        <span>{faceEnrolledBadge}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700"
+                    onClick={() => handleOpenWebcamModal('add')}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                   >
-                    <Camera className="w-3.5 h-3.5 text-slate-500" />
+                    <Camera className="w-3.5 h-3.5" />
                     <span>Take WebCam Snapshot</span>
                   </button>
                   <button
                     type="button"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700"
+                    onClick={() => {
+                      setPhotoTarget('add');
+                      fileInputRef.current?.click();
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 shadow-xs transition-colors cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-slate-500" />
                     <span>Upload Image File</span>
                   </button>
+                </div>
+
+                {/* Sample Face Quick Picker */}
+                <div className="pt-2 border-t border-slate-200/60">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Or choose sample student biometric profile:</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {sampleStudentFaces.map((sample, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleUseSampleFace(sample.url)}
+                        className={`group p-1.5 rounded-lg border text-left transition-all flex flex-col items-center gap-1 ${
+                          formData.avatarUrl === sample.url
+                            ? 'border-blue-500 bg-blue-50/70 ring-2 ring-blue-500/20'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <img
+                          src={sample.url}
+                          alt={sample.name}
+                          className="w-10 h-10 rounded-md object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+                          }}
+                        />
+                        <span className="text-[9px] font-medium text-slate-600 truncate max-w-full">
+                          {sample.name.split(' ')[0]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1056,6 +1585,56 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
                 />
               </div>
 
+              {/* Edit Biometric Photo Box */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                    <ScanFace className="w-4 h-4 text-blue-600" />
+                    <span>Facial Biometric Photo & Embedding</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    512-D Enrolled
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200">
+                  <img
+                    src={editingStudent.avatarUrl}
+                    alt={editingStudent.name}
+                    className="w-12 h-12 rounded-lg object-cover border border-slate-200 bg-slate-100"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+                    }}
+                  />
+                  <div className="flex-1 min-w-0 text-[11px]">
+                    <div className="font-semibold text-slate-800">Biometric Vector Linked</div>
+                    <div className="text-slate-500 truncate">Update photo to recalibrate facial recognition</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenWebcamModal('edit')}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Take WebCam Snapshot</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoTarget('edit');
+                      fileInputRef.current?.click();
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Upload Image File</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -1104,6 +1683,293 @@ export const StudentManagementPage: React.FC<StudentManagementPageProps> = ({
               >
                 Delete Student
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden File Input for Image Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleImageFileChange}
+        accept="image/jpeg,image/png,image/webp,image/jpg"
+        className="hidden"
+      />
+
+      {/* Hidden Canvas for Webcam Snapshot Capture */}
+      <canvas ref={webcamCanvasRef} className="hidden" />
+
+      {/* =========================================================================
+          WEBCAM BIOMETRIC SNAPSHOT CAPTURE MODAL
+          ========================================================================= */}
+      {isWebcamModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 relative">
+                  <Camera className="w-5 h-5" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>Webcam Face Snapshot &amp; Enrollment</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      512-D Biometrics
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Target: <span className="text-blue-300 font-semibold">{photoTarget === 'edit' && editingStudent ? editingStudent.name : formData.name || 'New Student'}</span>{' '}
+                    ({photoTarget === 'edit' && editingStudent ? editingStudent.id : formData.id})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseWebcamModal}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body / Camera Viewport */}
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* Camera Error / Warning Banner */}
+              {webcamError && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between text-xs text-amber-200">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>{webcamError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => startWebcamStream(true)}
+                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg font-semibold text-[11px] shrink-0 transition-colors"
+                  >
+                    Use Virtual Cam
+                  </button>
+                </div>
+              )}
+
+              {/* Viewport Frame */}
+              <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 aspect-4/3 flex items-center justify-center shadow-inner">
+                {capturedPhotoPreview ? (
+                  /* Captured Snapshot Preview */
+                  <div className="relative w-full h-full">
+                    <img
+                      src={capturedPhotoPreview}
+                      alt="Captured Biometric Snapshot"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-3 left-3 bg-emerald-500/90 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-md">
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>SNAPSHOT CAPTURED &amp; VERIFIED</span>
+                    </div>
+                    <div className="absolute bottom-3 left-3 right-3 bg-slate-950/80 backdrop-blur-md border border-slate-700/60 rounded-xl p-2.5 flex items-center justify-between text-xs text-slate-200">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        <span className="font-semibold">68 Facial Landmark Points Detected</span>
+                      </div>
+                      <span className="font-mono text-[10px] text-emerald-400 font-bold">L2 Norm: 0.984</span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Live Camera Feed or Virtual Camera */
+                  <div className="relative w-full h-full flex items-center justify-center bg-black">
+                    {!isVirtualWebcam ? (
+                      <video
+                        ref={(el) => {
+                          webcamVideoRef.current = el;
+                          if (el && webcamStreamRef.current && el.srcObject !== webcamStreamRef.current) {
+                            el.muted = true;
+                            el.defaultMuted = true;
+                            el.srcObject = webcamStreamRef.current;
+                            el.play().catch((e) => console.warn('Webcam play notice:', e));
+                          }
+                        }}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover scale-x-[-1]"
+                      />
+                    ) : (
+                      /* Virtual Biometric Feed Simulation */
+                      <div className="relative w-full h-full bg-linear-to-b from-slate-900 via-slate-950 to-slate-900 flex flex-col items-center justify-center overflow-hidden">
+                        {/* Futuristic scan grid */}
+                        <div
+                          className="absolute inset-0 opacity-15"
+                          style={{
+                            backgroundImage:
+                              'linear-gradient(rgba(56, 189, 248, 0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.4) 1px, transparent 1px)',
+                            backgroundSize: '24px 24px',
+                          }}
+                        />
+
+                        {/* Animated Laser Scanning Beam */}
+                        <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_#22d3ee] animate-pulse top-1/3" />
+
+                        {/* Simulated Human Head Graphic */}
+                        <div className="relative flex flex-col items-center z-10">
+                          <div className="w-32 h-44 rounded-[50%/60%_60%_40%_40%] border-2 border-cyan-400/80 bg-cyan-950/20 backdrop-blur-xs flex flex-col items-center justify-center relative shadow-[0_0_25px_rgba(34,211,238,0.2)]">
+                            {/* Eye markers */}
+                            <div className="flex items-center gap-10 mt-6">
+                              <span className="w-3 h-3 rounded-full bg-cyan-400/90 animate-ping" />
+                              <span className="w-3 h-3 rounded-full bg-cyan-400/90 animate-ping" />
+                            </div>
+                            {/* Nose marker */}
+                            <span className="w-1.5 h-3 bg-cyan-400/60 rounded-full mt-4" />
+                            {/* Mouth */}
+                            <div className="w-10 h-2 border-b-2 border-cyan-400/70 rounded-full mt-4" />
+                            {/* Crosshairs */}
+                            <span className="absolute top-2 text-[9px] font-mono text-cyan-300">
+                              + ALIGNED +
+                            </span>
+                          </div>
+                          {/* Shoulders */}
+                          <div className="w-56 h-16 rounded-t-full border-t-2 border-blue-500/50 bg-blue-950/30 -mt-2" />
+                        </div>
+
+                        {/* Mode indicator */}
+                        <div className="absolute top-3 left-3 bg-indigo-500/80 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded shadow">
+                          VIRTUAL BIOMETRIC CAM · 30 FPS
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Biometric HUD Overlays */}
+                    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="px-2 py-0.5 rounded bg-black/60 text-emerald-400 border border-emerald-500/30 font-bold flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          LIVE BIOMETRIC HUD
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-black/60 text-slate-300 border border-slate-700">
+                          640 × 480 · 30 FPS
+                        </span>
+                      </div>
+
+                      {/* Oval Alignment Guide */}
+                      <div className="self-center w-48 h-60 rounded-[50%/60%_60%_40%_40%] border-2 border-dashed border-emerald-400/60 flex items-center justify-center relative">
+                        <span className="absolute -top-6 text-[10px] font-mono font-bold text-emerald-300 bg-black/70 px-2 py-0.5 rounded">
+                          ALIGN FACE HERE
+                        </span>
+                        {/* Target Reticles */}
+                        <div className="w-4 h-4 border-t-2 border-l-2 border-emerald-400 absolute -top-1 -left-1" />
+                        <div className="w-4 h-4 border-t-2 border-r-2 border-emerald-400 absolute -top-1 -right-1" />
+                        <div className="w-4 h-4 border-b-2 border-l-2 border-emerald-400 absolute -bottom-1 -left-1" />
+                        <div className="w-4 h-4 border-b-2 border-r-2 border-emerald-400 absolute -bottom-1 -right-1" />
+                      </div>
+
+                      {/* Quality status indicators */}
+                      <div className="flex items-center justify-between bg-black/70 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-slate-800 text-[10px] font-mono text-slate-300">
+                        <span>Liveness: <strong className="text-emerald-400">99.4%</strong></span>
+                        <span>Illumination: <strong className="text-emerald-400">Optimal</strong></span>
+                        <span>Pose: <strong className="text-emerald-400">Centered</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Source Switcher Toolbar */}
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => startWebcamStream(!isVirtualWebcam)}
+                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
+                  <span>
+                    {isVirtualWebcam ? 'Switch to Hardware Webcam' : 'Switch to Virtual Biometric Feed'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                  }}
+                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Upload Image File Instead</span>
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center gap-3">
+                {capturedPhotoPreview ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => startWebcamStream(isVirtualWebcam)}
+                      className="px-4 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Retake Snapshot</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCapturedPhoto}
+                      className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>Confirm &amp; Enroll Biometric Vector</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCloseWebcamModal}
+                      className="px-4 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCaptureSnapshot}
+                      className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-900/40 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Capture Snapshot Now</span>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Quick Sample Profile Selector in Modal */}
+              <div className="pt-3 border-t border-slate-800">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Or select sample student face vector:
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {sampleStudentFaces.map((sample, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleUseSampleFace(sample.url)}
+                      className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 hover:border-blue-500/50 hover:bg-slate-800/60 transition-all flex flex-col items-center gap-1 text-left"
+                    >
+                      <img
+                        src={sample.url}
+                        alt={sample.name}
+                        className="w-10 h-10 rounded-md object-cover bg-slate-900"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+                        }}
+                      />
+                      <span className="text-[10px] font-medium text-slate-300 truncate max-w-full">
+                        {sample.name.split(' ')[0]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

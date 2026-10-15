@@ -203,7 +203,8 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   avatarUrl: string;
-  canMakeChanges: boolean; // only admin has permission to make changes
+  canMakeChanges: boolean; // admin has master permission to make changes, teacher has course editing
+  password?: string;
   department?: string;
   course?: string;
   section?: string;
